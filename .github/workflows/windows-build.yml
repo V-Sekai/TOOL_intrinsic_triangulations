@@ -1,0 +1,55 @@
+name: Windows Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        # If any additional deps needed, install here. For MSVC, it's built in.
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: intrinsic_triangulations_windows
+        path: build/bin/int_tri.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: intrinsic_triangulations_windows
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: int_tri.exe
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
