@@ -34,13 +34,38 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
+      - name: Install CMake (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake
+
+      - name: Check CMake version
+        run: cmake --version
+
+      - name: Verify submodules
+        shell: bash
+        run: |
+          git submodule status
+          if git submodule status | grep -q '^-'; then
+            echo "Some submodules not initialized, initializing..."
+            git submodule update --init --recursive
+          else
+            echo "All submodules initialized"
+          fi
+
       - name: Create Build Directory
         run: mkdir build
 
       - name: Run CMake
         run: |
           cd build
-          cmake .. -GNinja
+          cmake .. -GNinja -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
+
+      - name: Upload CMake output (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmake-output-${{ runner.os }}
+          path: build/cmake_output.log
 
       - name: Run Ninja
         run: |
