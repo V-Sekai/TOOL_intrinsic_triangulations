@@ -1,6 +1,14 @@
 name: Build with CMake and Ninja
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -41,10 +49,28 @@ jobs:
       - name: Check CMake version
         run: cmake --version
 
+      - name: Verify submodules
+        shell: bash
+        run: |
+          git submodule status
+          if git submodule status | grep -q '^-'; then
+            echo "Some submodules not initialized, initializing..."
+            git submodule update --init --recursive
+          else
+            echo "All submodules initialized"
+          fi
+
       - name: Create Build Directory
         run: mkdir build
 
-      - name: Run CMake
+      - name: Run CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
+
+      - name: Run CMake (Linux and macOS)
+        if: runner.os != 'Windows'
         run: |
           cd build
           cmake .. -GNinja -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
@@ -56,25 +82,89 @@ jobs:
           name: cmake-output-${{ runner.os }}
           path: build/cmake_output.log
 
-      - name: Run Ninja
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release
+
+      - name: Build (Linux and macOS)
+        if: runner.os != 'Windows'
         run: |
           cd build
           ninja
 
-      - name: Create Zip File (Windows)
-        run: |
-          cd build
-          powershell Compress-Archive -Path bin/* -DestinationPath bin.zip
+      - name: Upload Artifact (Windows)
         if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-bin-${{ runner.os }}
+          path: build/bin/Release/int_tri.exe
 
       - name: Create Zip File (Linux and macOS)
+        if: runner.os != 'Windows'
         run: |
           cd build
           zip -r bin.zip bin/
-        if: runner.os != 'Windows'
 
-      - name: Upload Artifact
+      - name: Upload Artifact (Linux and macOS)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: build-bin-${{ runner.os }}
           path: build/bin.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-bin-Windows
+          path: release/windows/
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-bin-Linux
+          path: release/linux/
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-bin-macOS
+          path: release/macos/
+
+      - name: Extract Linux and macOS artifacts
+        run: |
+          cd release/linux
+          if [ -f bin.zip ]; then
+            unzip -q bin.zip
+            rm bin.zip
+          fi
+          cd ../macos
+          if [ -f bin.zip ]; then
+            unzip -q bin.zip
+            rm bin.zip
+          fi
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release/assets
+          # Windows executable
+          find release/windows -name "int_tri.exe" -exec cp {} release/assets/int_tri-windows.exe \;
+          # Linux executable
+          find release/linux -name "int_tri" -type f -exec sh -c 'cp "$1" release/assets/int_tri-linux && chmod +x release/assets/int_tri-linux' _ {} \;
+          # macOS executable
+          find release/macos -name "int_tri" -type f -exec sh -c 'cp "$1" release/assets/int_tri-macos && chmod +x release/assets/int_tri-macos' _ {} \;
+          ls -la release/assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/assets/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
