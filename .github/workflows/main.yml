@@ -41,17 +41,6 @@ jobs:
       - name: Check CMake version
         run: cmake --version
 
-      - name: Verify submodules
-        shell: bash
-        run: |
-          git submodule status
-          if git submodule status | grep -q '^-'; then
-            echo "Some submodules not initialized, initializing..."
-            git submodule update --init --recursive
-          else
-            echo "All submodules initialized"
-          fi
-
       - name: Create Build Directory
         run: mkdir build
 
