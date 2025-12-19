@@ -70,12 +70,6 @@ jobs:
       - name: Create Build Directory
         run: mkdir -p build
 
-      - name: Check build directory
-        run: |
-          pwd
-          ls -la
-          ls -la build/ || echo "Build directory is empty"
-
       - name: Run CMake
         shell: bash
         run: |
