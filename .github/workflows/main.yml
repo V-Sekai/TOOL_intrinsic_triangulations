@@ -67,17 +67,11 @@ jobs:
       - name: Create Build Directory
         run: mkdir build
 
-      - name: Run CMake (Windows)
-        if: runner.os == 'Windows'
+      - name: Run CMake
+        shell: bash
         run: |
           cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
-
-      - name: Run CMake (Linux and macOS)
-        if: runner.os != 'Windows'
-        run: |
-          cd build
-          cmake .. -GNinja -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
+          cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
 
       - name: Upload CMake output (on failure)
         if: failure()
@@ -86,22 +80,17 @@ jobs:
           name: cmake-output-${{ runner.os }}
           path: build/cmake_output.log
 
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        run: cmake --build build --config Release
-
-      - name: Build (Linux and macOS)
-        if: runner.os != 'Windows'
+      - name: Build
+        shell: bash
         run: |
           cd build
           ninja
 
-      - name: Upload Artifact (Windows)
+      - name: Create Zip File (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-bin-${{ runner.os }}
-          path: build/bin/Release/int_tri.exe
+        run: |
+          cd build
+          powershell Compress-Archive -Path bin/* -DestinationPath bin.zip
 
       - name: Create Zip File (Linux and macOS)
         if: runner.os != 'Windows'
@@ -109,8 +98,7 @@ jobs:
           cd build
           zip -r bin.zip bin/
 
-      - name: Upload Artifact (Linux and macOS)
-        if: runner.os != 'Windows'
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-bin-${{ runner.os }}
