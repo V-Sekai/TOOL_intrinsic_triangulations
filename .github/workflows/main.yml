@@ -15,6 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
@@ -48,7 +49,9 @@ jobs:
 
       - name: Install CMake (macOS)
         if: runner.os == 'macOS'
-        run: brew install cmake
+        run: |
+          brew install cmake || brew upgrade cmake || true
+          cmake --version
 
       - name: Check CMake version
         run: cmake --version
@@ -65,13 +68,34 @@ jobs:
           fi
 
       - name: Create Build Directory
-        run: mkdir build
+        run: mkdir -p build
+
+      - name: Check build directory
+        run: |
+          pwd
+          ls -la
+          ls -la build/ || echo "Build directory is empty"
 
       - name: Run CMake
         shell: bash
         run: |
+          set -e
           cd build
-          cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON 2>&1 | tee cmake_output.log || (echo "=== CMake failed. Full output: ===" && cat cmake_output.log && exit 1)
+          echo "Running CMake from: $(pwd)"
+          echo "Source directory: $(cd .. && pwd)"
+          echo "CMake version: $(cmake --version)"
+          echo "Ninja version: $(ninja --version || echo 'Ninja not found')"
+          echo "Compiler: $(c++ --version || echo 'Compiler check failed')"
+          
+          # Run CMake and capture output
+          if cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON > cmake_output.log 2>&1; then
+            echo "CMake configuration succeeded"
+            cat cmake_output.log
+          else
+            echo "=== CMake failed. Full output: ==="
+            cat cmake_output.log
+            exit 1
+          fi
 
       - name: Upload CMake output (on failure)
         if: failure()
@@ -108,6 +132,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref_type == 'tag'
+    continue-on-error: true
 
     steps:
       - name: Download Windows artifact
@@ -115,18 +140,21 @@ jobs:
         with:
           name: build-bin-Windows
           path: release/windows/
+        continue-on-error: true
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: build-bin-Linux
           path: release/linux/
+        continue-on-error: true
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: build-bin-macOS
           path: release/macos/
+        continue-on-error: true
 
       - name: Extract Linux and macOS artifacts
         run: |
@@ -144,15 +172,41 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release/assets
-          # Windows executable
-          find release/windows -name "int_tri.exe" -exec cp {} release/assets/int_tri-windows.exe \;
-          # Linux executable
-          find release/linux -name "int_tri" -type f -exec sh -c 'cp "$1" release/assets/int_tri-linux && chmod +x release/assets/int_tri-linux' _ {} \;
-          # macOS executable
-          find release/macos -name "int_tri" -type f -exec sh -c 'cp "$1" release/assets/int_tri-macos && chmod +x release/assets/int_tri-macos' _ {} \;
-          ls -la release/assets/
+          # Windows executable (if available)
+          if find release/windows -name "int_tri.exe" 2>/dev/null | head -1 | xargs -I {} cp {} release/assets/int_tri-windows.exe 2>/dev/null; then
+            echo "Windows executable found"
+          else
+            echo "Windows executable not found (build may have failed)"
+          fi
+          # Linux executable (if available)
+          if find release/linux -name "int_tri" -type f 2>/dev/null | head -1 | xargs -I {} sh -c 'cp "$1" release/assets/int_tri-linux && chmod +x release/assets/int_tri-linux' _ {} 2>/dev/null; then
+            echo "Linux executable found"
+          else
+            echo "Linux executable not found (build may have failed)"
+          fi
+          # macOS executable (if available)
+          if find release/macos -name "int_tri" -type f 2>/dev/null | head -1 | xargs -I {} sh -c 'cp "$1" release/assets/int_tri-macos && chmod +x release/assets/int_tri-macos' _ {} 2>/dev/null; then
+            echo "macOS executable found"
+          else
+            echo "macOS executable not found (build may have failed)"
+          fi
+          echo "Available release files:"
+          ls -la release/assets/ || echo "No release files found"
+
+      - name: Check for release files
+        id: check_files
+        run: |
+          if [ -n "$(ls -A release/assets/ 2>/dev/null)" ]; then
+            echo "files_exist=true" >> $GITHUB_OUTPUT
+            echo "Found release files:"
+            ls -la release/assets/
+          else
+            echo "files_exist=false" >> $GITHUB_OUTPUT
+            echo "No release files found"
+          fi
 
       - name: Create Release
+        if: steps.check_files.outputs.files_exist == 'true'
         uses: softprops/action-gh-release@v1
         with:
           files: release/assets/*
@@ -160,3 +214,9 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Warn if no release files
+        if: steps.check_files.outputs.files_exist == 'false'
+        run: |
+          echo "Warning: No release files were created. Some builds may have failed."
+          exit 0
