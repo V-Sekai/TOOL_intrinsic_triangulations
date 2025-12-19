@@ -82,7 +82,8 @@ jobs:
           echo "Compiler: $(c++ --version || echo 'Compiler check failed')"
           
           # Run CMake and capture output
-          if cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON > cmake_output.log 2>&1; then
+          # CMAKE_POLICY_VERSION_MINIMUM is needed for CMake 4.x compatibility with submodules requiring older CMake versions
+          if cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > cmake_output.log 2>&1; then
             echo "CMake configuration succeeded"
             cat cmake_output.log
           else
