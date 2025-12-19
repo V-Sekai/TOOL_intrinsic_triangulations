@@ -71,7 +71,41 @@ jobs:
       - name: Create Build Directory
         run: mkdir -p build
 
-      - name: Run CMake
+      - name: Run CMake (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          cd build
+          echo "Running CMake from: $(pwd)"
+          echo "Source directory: $(cd .. && pwd)"
+          echo "CMake version: $(cmake --version)"
+          echo "Ninja version: $(ninja --version || echo 'Ninja not found')"
+          
+          # Ensure MSVC is used instead of MinGW/GCC to avoid SEH requirement
+          # On Windows, CMake with Ninja should auto-detect MSVC, but we can help it
+          # by not having MinGW in PATH or by explicitly preferring MSVC
+          echo "Checking available compilers..."
+          which cl.exe && echo "MSVC found" || echo "MSVC not in PATH (will auto-detect)"
+          which gcc.exe && echo "WARNING: GCC/MinGW found in PATH" || echo "GCC/MinGW not in PATH (good)"
+          
+          # Run CMake and capture output
+          # CMAKE_POLICY_VERSION_MINIMUM is needed for CMake 4.x compatibility with submodules requiring older CMake versions
+          # CMake will auto-detect MSVC on Windows runners, avoiding MinGW/GCC SEH requirement
+          if cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > cmake_output.log 2>&1; then
+            echo "CMake configuration succeeded"
+            cat cmake_output.log
+            echo "Verifying compiler used:"
+            grep -i "The C compiler identification" cmake_output.log || true
+            grep -i "The CXX compiler identification" cmake_output.log || true
+          else
+            echo "=== CMake failed. Full output: ==="
+            cat cmake_output.log
+            exit 1
+          fi
+
+      - name: Run CMake (Linux and macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -e
