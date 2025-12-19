@@ -40,10 +40,6 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install ninja-build xorg-dev libglu1-mesa-dev libxrandr-dev libxi-dev libxinerama-dev libxcursor-dev libxxf86vm-dev
 
-      - name: Install Ninja (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ninja
-
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja
@@ -80,19 +76,17 @@ jobs:
           echo "Running CMake from: $(pwd)"
           echo "Source directory: $(cd .. && pwd)"
           echo "CMake version: $(cmake --version)"
-          echo "Ninja version: $(ninja --version || echo 'Ninja not found')"
           
           # Ensure MSVC is used instead of MinGW/GCC to avoid SEH requirement
-          # On Windows, CMake with Ninja should auto-detect MSVC, but we can help it
-          # by not having MinGW in PATH or by explicitly preferring MSVC
+          # Use default generator (Visual Studio/MSBuild) on Windows, not Ninja
           echo "Checking available compilers..."
           which cl.exe && echo "MSVC found" || echo "MSVC not in PATH (will auto-detect)"
           which gcc.exe && echo "WARNING: GCC/MinGW found in PATH" || echo "GCC/MinGW not in PATH (good)"
           
           # Run CMake and capture output
           # CMAKE_POLICY_VERSION_MINIMUM is needed for CMake 4.x compatibility with submodules requiring older CMake versions
-          # CMake will auto-detect MSVC on Windows runners, avoiding MinGW/GCC SEH requirement
-          if cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > cmake_output.log 2>&1; then
+          # Using default generator (Visual Studio) on Windows, which uses MSVC and avoids MinGW/GCC SEH requirement
+          if cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > cmake_output.log 2>&1; then
             echo "CMake configuration succeeded"
             cat cmake_output.log
             echo "Verifying compiler used:"
@@ -134,7 +128,12 @@ jobs:
           name: cmake-output-${{ runner.os }}
           path: build/cmake_output.log
 
-      - name: Build
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release
+
+      - name: Build (Linux and macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd build
@@ -144,7 +143,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cd build
-          powershell Compress-Archive -Path bin/* -DestinationPath bin.zip
+          powershell Compress-Archive -Path bin/Release/* -DestinationPath bin.zip
 
       - name: Create Zip File (Linux and macOS)
         if: runner.os != 'Windows'
