@@ -30,6 +30,10 @@ jobs:
           tar xf llvm-mingw-20230614-ucrt-ubuntu-20.04-x86_64.tar.xz
           echo "$(pwd)/llvm-mingw-20230614-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
 
+      - name: Update Dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt update
+
       - name: Install Dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get install ninja-build xorg-dev libglu1-mesa-dev libxrandr-dev libxi-dev libxinerama-dev libxcursor-dev libxxf86vm-dev
